@@ -23,10 +23,14 @@ class SelfAttention(nn.Module):
 
         # Split embeddings into self.heads pieces
         values = values.reshape(N, value_len, self.heads, self.head_dim)
-        keys = values.reshape(N, key_len, self.heads, self.head_dim)
-        query = values.reshape(N, query_len, self.heads, self.head_dim)
+        keys = keys.reshape(N, key_len, self.heads, self.head_dim)
+        queries = query.reshape(N, query_len, self.heads, self.head_dim)
 
-        energy = torch.einsum("nqhd, nkhd --> nhqk", [queries, keys])
+        values = self.values(values)
+        keys = self.keys(keys)
+        queries = self.queries(queries)
+
+        energy = torch.einsum("nqhd, nkhd -> nhqk", [queries, keys])
         # queries shape: (N, query_len, heads, heads_dim)
         # key shape: (N, key_len, heads, heads_dim)
         # energy shape: (N, heads, query_len, key_len)
@@ -37,7 +41,7 @@ class SelfAttention(nn.Module):
 
         attention = torch.softmax(energy / (self.embed_size ** 0.5), dim = 3)
 
-        out = torch.eisum("nhql, nlhd --> nqhd", [attention, values]).reshape(N, query_len, self.heads * self.head_dim)
+        out = torch.einsum("nhql, nlhd -> nqhd", [attention, values]).reshape(N, query_len, self.heads * self.head_dim)
         # attention shape: (N, heads, query_len, key_len)
         # values shape: (N, value_len, heads, heads_dim)
         # out shape: (N, query_len, heads, heads_dim)
@@ -79,9 +83,7 @@ class Encoder(nn.Module):
         self.position_embedding = nn.Embedding(max_length, embed_size)
 
         self.layers = nn.ModuleList(
-            [
-                TransformerBlock(embed_size, heads, dropout, forward_expansion)
-            ]
+            [TransformerBlock(embed_size, heads, dropout, forward_expansion) for _ in range(num_layers)]
         )
 
         self.dropout = nn.Dropout(dropout)
@@ -134,6 +136,7 @@ class Decoder(nn.Module):
             x = layer(x, enc_out, enc_out, src_mask, trg_mask)
 
         out = self.fc_out(x)
+        return out
 
 class Transformer(nn.Module):
     def __init__(
@@ -178,5 +181,5 @@ if __name__ == "__main__":
     trg_vocab_size = 10
     model = Transformer(src_vocab_size, trg_vocab_size, src_pad_idx, trg_pad_idx).to(device)
 
-    out = model(x, trg[:, :, -1])
+    out = model(x, trg[:, :-1])
     print(out.shape)
